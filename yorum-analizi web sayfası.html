@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Müşteri Yorum Analizi – Frontend (HTML + JS)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+  <style>
+    :root { --brand: #8b5cf6; }
+    main { max-width: 980px; }
+    .badge { padding: .25rem .6rem; border-radius: .75rem; font-size: .9rem; }
+    /* Soft pastel renkler */
+    .pos { background: #f3fff7; border: 1px solid #cfeee0; }
+    .neg { background: #fff6f6; border: 1px solid #f7dede; }
+    .neu { background: #f6f7ff; border: 1px solid #e2e6ff; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .muted { color: #6b7280; }
+    .grid { display: grid; gap: 1rem; }
+    .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 800px){ .grid.cols-2 { grid-template-columns: 1fr; } }
+    .token-row td { vertical-align: middle; }
+    .token-row td:nth-child(1){ width: 40%; }
+    .pill { padding: .2rem .6rem; border-radius: 999px; border: 1px solid #e5e7eb; background: #fafafa; }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+    .header h1 { margin: 0; }
+    .tiny { font-size: .85rem; }
+  </style>
+</head>
+<body>
+<main class="container">
+  <header class="header">
+    <h1>⭐ Müşteri Yorum Analizi</h1>
+  </header>
+  
+
+  <section>
+    <form id="form">
+      <label for="text">Yorum</label>
+      <textarea id="text" name="text" rows="6" placeholder="Örn: Kurye hızlıydı, yemek sıcacıktı. Fiyatlar uygun değildi ama yine de beğendim."></textarea>
+      <div class="grid cols-2">
+        <div>
+          <label><input type="checkbox" id="chkCase" checked> BÜYÜK HARF/ünlem vurgusunu dikkate al</label>
+          <label><input type="checkbox" id="chkEmoji" checked> Emoji duygu sinyallerini kullan</label>
+        </div>
+      </div>
+      <button type="submit">Analiz Et</button>
+    </form>
+  </section>
+
+  <section id="result" style="display:none">
+    <article>
+      <header class="header">
+        <strong>Sonuç</strong>
+        <div>
+          <span id="labelBadge" class="badge neu">Nötr</span>
+          <span class="pill mono" id="score">skor: 0</span>
+        </div>
+      </header>
+      <p><span class="muted">Yorum:</span> <span id="echo"></span></p>
+
+      <details open>
+        <summary>Ayrıntılar (token katkıları)</summary>
+        <table>
+          <thead>
+            <tr><th>Token</th><th>Neden</th><th>Katkı</th></tr>
+          </thead>
+          <tbody id="detailBody"></tbody>
+        </table>
+      </details>
+    </article>
+  </section>
+
+  
+</main>
+
+<script>
+// --- Basit Türkçe duygu sözlüğü ---
+const LEX_POS = new Map(Object.entries({
+  'harika':2, 'mükemmel':2, 'çok iyi':1.8, 'süper':1.7, 'bayıldım':1.8,
+  'başarılı':1.4, 'kaliteli':1.3, 'hızlı':1.2, 'güzel':1.2, 'memnun':1.2,
+  'tavsiye':1.1, 'beğendim':1.4, 'şahane':1.8, 'efsane':1.8, 'uygun':1.0,
+  'lezzetli':1.5, 'temiz':1.1, 'ilgili':1.2, 'nazik':1.1, 'iyi':1.0,
+}));
+const LEX_NEG = new Map(Object.entries({
+  'kötü':-1.2, 'berbat':-2, 'rezalet':-2, 'yavaş':-1.1, 'pahalı':-1.0,
+  'bayat':-1.6, 'soğuk':-1.0, 'yanlış':-1.2, 'eksik':-1.1, 'pis':-1.6,
+  'ilgisiz':-1.2, 'saygısız':-1.5, 'beklettiler':-1.4, 'hayal kırıklığı':-1.8,
+  'yakışık almadı':-1.4, 'vasat':-0.9, 'idare eder':-0.4, 'tatsız':-1.2,
+  'yanmış':-1.2, 'geç':-0.9,
+}));
+const NEGATIONS = new Set(['değil','hiç','asla','yok','değilmiş','olmamış']);
+
+// Emoji sinyalleri (basit)
+const EMOJI = new Map(Object.entries({
+  '😀': 0.6,'😄': 0.7,'😁': 0.8,'😊': 0.5,'🙂': 0.3,'😍': 0.8,'🥰': 0.7,'👍': 0.6,'🙏': 0.3,
+  '😐': 0.0,'🤷': 0.0,
+  '☹️': -0.5,'🙁': -0.5,'😞': -0.7,'😠': -0.8,'😡': -1.0,'👎': -0.7,'😭': -0.9,
+}));
+
+function stemLike(w){
+  return w.replace(/(ler|lar|dır|dir|dur|dür|tir|tır|tur|tür|im|ım|um|üm|sin|sın|sun|sün|siz|sız|suz|süz|de|da|ta|te|den|dan|ten|tan|li|lı|lu|lü|lik|lık|luk|lük)$/u, '');
+}
+
+function normalize(raw){
+  return Math.tanh(raw / 4);
+}
+
+function analyze(text, opts={caseAmplify:true, emoji:true}){
+  const original = text;
+  let t = text.toLowerCase();
+
+  // Çok kelimeli ifadeleri tokenlemeden önce koru
+  const multi = [...LEX_POS.keys(), ...LEX_NEG.keys()].filter(k=>k.includes(' '));
+  const mapMulti = new Map();
+  for(const k of multi){
+    const token = k.replaceAll(' ','_');
+    mapMulti.set(token, k);
+    t = t.replaceAll(k, token);
+  }
+
+  // Noktalama temizle (underscore ve emoji hariç kabaca)
+  t = t.replace(/[\p{P}$+<=>^`~|]/gu, ' ');
+
+  const rawTokens = t.split(/\s+/u).filter(Boolean);
+  const details = [];
+  let score = 0;
+  let negateNext = false;
+
+  // Büyük harf / ünlem amplifikasyonu (opsiyonel)
+  let amplify = 1;
+  if(opts.caseAmplify){
+    const exclam = (original.match(/!/g)||[]).length;
+    const upperFrac = (()=>{
+      const letters = original.match(/[A-ZÇĞİÖŞÜ]/g) || [];
+      const allLetters = original.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/g) || [];
+      return allLetters.length? (letters.length / allLetters.length): 0;
+    })();
+    amplify = 1 + Math.min(0.5, exclam*0.1 + upperFrac*0.8); // max +50%
+  }
+
+  for(const wRaw of rawTokens){
+    let w = wRaw;
+    if(mapMulti.has(w)) w = mapMulti.get(w).replaceAll(' ','_');
+
+    if(NEGATIONS.has(w.replaceAll('_',' '))){
+      negateNext = true;
+      details.push({token:w.replaceAll('_',' '), weight:0, reason:'negation'});
+      continue;
+    }
+
+    // Çok kelimeli gösterim için display
+    const display = w.replaceAll('_',' ');
+
+    let weight = 0;
+    if(LEX_POS.has(display)) weight = LEX_POS.get(display);
+    else if(LEX_NEG.has(display)) weight = LEX_NEG.get(display);
+    else {
+      const s = stemLike(display);
+      for(const [k,v] of LEX_POS){ if(stemLike(k).startsWith(s) || s.startsWith(stemLike(k))) weight = Math.max(weight, v*0.6); }
+      for(const [k,v] of LEX_NEG){ if(stemLike(k).startsWith(s) || s.startsWith(stemLike(k))) weight = Math.min(weight, v*0.6); }
+    }
+
+    if(negateNext && weight !== 0){ weight = -weight; negateNext = false; details.push({token:display, weight, reason:'negated'}); }
+    else if(weight !== 0){ details.push({token:display, weight, reason:'lexicon'}); }
+    else { details.push({token:display, weight:0, reason:'neutral'}); }
+
+    score += weight;
+  }
+
+  // Emoji katkıları (opsiyonel)
+  if(opts.emoji){
+    for(const [e,val] of EMOJI){
+      const count = (original.match(new RegExp(e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))||[]).length;
+      if(count>0){ const w = val*count; details.push({token:e, weight:w, reason:'emoji'}); score += w; }
+    }
+  }
+
+  const norm = normalize(score*amplify);
+  let label = 'neutral';
+  if(norm > 0.15) label = 'positive';
+  if(norm < -0.15) label = 'negative';
+
+  return {
+    input: original, score: Number(norm.toFixed(3)), label, details
+  };
+}
+
+function render(result){
+  const r = document.getElementById('result');
+  const echo = document.getElementById('echo');
+  const score = document.getElementById('score');
+  const badge = document.getElementById('labelBadge');
+  const tbody = document.getElementById('detailBody');
+
+  r.style.display = 'block';
+  echo.textContent = result.input;
+  score.textContent = `skor: ${result.score}`;
+
+  const trMap = {positive:'Pozitif', negative:'Negatif', neutral:'Nötr'};
+  badge.textContent = `${trMap[result.label]}`;
+  badge.className = 'badge ' + (result.label==='positive'?'pos':(result.label==='negative'?'neg':'neu'));
+
+  tbody.innerHTML = '';
+  for(const d of result.details){
+    const tr = document.createElement('tr');
+    tr.className = 'token-row';
+    const c = d.weight>0?'pos':(d.weight<0?'neg':'neu');
+    tr.innerHTML = `<td class="mono">${d.token}</td><td>${d.reason}</td><td><span class="badge ${c}">${d.weight}</span></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// --- UI bağlama ---
+const form = document.getElementById('form');
+const chkCase = document.getElementById('chkCase');
+const chkEmoji = document.getElementById('chkEmoji');
+const text = document.getElementById('text');
+
+form.addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const result = analyze(text.value, {caseAmplify: chkCase.checked, emoji: chkEmoji.checked});
+  render(result);
+});
+</script>
+</body>
+</html>
