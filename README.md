@@ -1,6 +1,31 @@
-# html 
-cats web yatığım ilk web sayfası küçük bir web denemesi yapmak istedim 
-yorum analizi sayfasında yapay zekada öğrendiğimiz embeddinge göre yakınlık bularak analiz yaptırmayı denedim 
+# HTML ve JavaScript Çalışmaları
 
+HTML, CSS ve JavaScript öğrenme sürecimde hazırladığım küçük web projelerini bir araya getiren koleksiyondur.
 
-müzik veri tabanı html çalışmamda oluşturduğum veri tabanının giriş sayfasının ui görselini oluşturdum internetten bulduğum örnek görseli kendi yorumumla değiştirerek kendime göre yeniden kodladım 
+## Projeler
+
+### Kediler Dünyası
+
+Kediler hakkında temel bilgiler, bakım önerileri ve görsel galeri içeren ilk web sayfası çalışmam.
+
+### Müşteri Yorum Analizi
+
+Girilen metni tarayıcı içinde çalışan kelime ağırlıkları ve benzerlik yaklaşımıyla pozitif, negatif veya nötr olarak sınıflandıran JavaScript çalışmasıdır. Harici bir yapay zekâ servisine veya API'ye bağlanmaz.
+
+## Dosyalar
+
+- `index.html` — Projeleri tanıtan ana sayfa
+- `cats.html` — Kediler Dünyası
+- `sentiment-analysis.html` — Müşteri Yorum Analizi
+
+## Kullanılan teknolojiler
+
+- HTML5
+- CSS3
+- JavaScript
+
+## Canlı demo
+
+GitHub Pages etkinleştirildikten sonra proje aşağıdaki adresten görüntülenebilir:
+
+https://ilyda-gkhn.github.io/html/
